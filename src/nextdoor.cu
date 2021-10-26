@@ -2557,10 +2557,29 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
 
         CUDA_SYNC_DEVICE_ALL(nextDoorData);
       } else {
+        //We have transit vertices and samples from previous step
         for(auto deviceIdx = 0; deviceIdx < nextDoorData.devices.size(); deviceIdx++) {
           auto device = nextDoorData.devices[deviceIdx];
           CHK_CU(cudaSetDevice(device));
           const VertexID_t deviceSampleStartPtr = PartStartPointer(nextDoorData.samples.size(), deviceIdx, numDevices);
+          
+          //nextDoorData.dTransitToSampleMapKeys[deviceIdx] contains the transit vertices
+
+          VertexID_t* vertices = new VertexID_t[totalThreads[deviceIdx]];
+          //dest, src
+          CHK_CU(cudaMemcpy(vertices, nextDoorData.dTransitToSampleMapKeys[deviceIdx], sizeof(VertexID_t*), cudaMemcpyDeviceToHost));        
+
+          //Convert vertices array to vector
+          std::vector<VertexID_t> vertices_vector;
+          int len = sizeof(vertices)/sizeof(vertices[0]);
+          
+          for (auto id = 0; id < len; id++) {
+            vertices_vector.push_back(vertices[id]);
+          }
+
+          //Call partitionForTransitVertices() function
+          partitionForTransitVertices(nextDoorData.csr, vertices_vector);
+
           for (int threadsExecuted = 0; threadsExecuted < totalThreads[deviceIdx]; threadsExecuted += nextDoorData.maxThreadsPerKernel[deviceIdx]) {
             size_t currExecutionThreads = min((size_t)nextDoorData.maxThreadsPerKernel[deviceIdx], totalThreads[deviceIdx] - threadsExecuted);
             samplingKernel<SampleType, App, TransitParallelMode::NextFuncExecution, 0><<<thread_block_size(currExecutionThreads, N_THREADS), N_THREADS>>>(step, gpuCSRPartitions[deviceIdx], 
@@ -2575,6 +2594,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
         }
 
         CUDA_SYNC_DEVICE_ALL(nextDoorData);
+        //We have list of samples and their transit vertices after executing this step
       }
     } else {
       if (App().samplingType() == SamplingType::CollectiveNeighborhood) {
@@ -3344,6 +3364,88 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
   return nextDoorData.hFinalSamples;
 }
 
+
+void partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
+{
+  size_t lastEdgeIdx = 0;
+  size_t numVertices = 0;
+  size_t numEdgesInPartition = 0;
+
+  // Each partition has three arrays: vertices, edges, weights
+  std::vector<CSR::Vertex>* vertices = new std::vector<CSR::Vertex>();
+  std::vector<CSR::Edge>* edges = new std::vector<CSR::Edge>();
+  std::vector<float>* weights = new std::vector<float>();
+
+  for (VertexID_t vertex : vertexIndices) {
+    printf("Vertex %d\n", vertex);
+    vertices->push_back(origGraph->get_vertices()[vertex]);
+    numVertices++;
+
+    if (origGraph->n_edges_for_vertex(vertex) > 0) {
+      // Iterate through all edges leaving given vertex and add to edge array
+      for (auto edgeIdx = origGraph->get_start_edge_idx(vertex); edgeIdx <= origGraph->get_end_edge_idx(vertex); edgeIdx++) {
+        printf("Edge %d\n", edgeIdx);
+        CSR::Edge edge = origGraph->get_edges()[edgeIdx];
+        edges->push_back(edge);        
+        numEdgesInPartition++;
+
+        const float* weight = origGraph->get_weights();
+        weights->push_back(*weight);
+      }
+    }
+  }
+}
+
+///Write a function to partition CSR graph such that number of vertices in each partition are less than N 
+
+std::vector<CSRPartition> partitionCSR(CSR* origGraph, int N) 
+{
+  // Vector storing partitions
+  std::vector<CSRPartition> partitions;
+  
+  size_t lastEdgeIdx = 0;
+  size_t numVertices = 0;
+  size_t numEdgesInPartition = 0;
+
+  // Each partition has three arrays: vertices, edges, weights
+  std::vector<CSR::Vertex>* vertices = new std::vector<CSR::Vertex>();
+  std::vector<CSR::Edge>* edges = new std::vector<CSR::Edge>();
+  std::vector<float>* weights = new std::vector<float>();
+
+  for (auto vertex : origGraph->iterate_vertices()) {
+
+    vertices->push_back(origGraph->get_vertices()[vertex]);
+    numVertices++;
+
+    if (origGraph->n_edges_for_vertex(vertex) > 0) {
+      // Iterate through all edges leaving given vertex and add to edge array
+      for (auto edgeIdx = origGraph->get_start_edge_idx(vertex); edgeIdx <= origGraph->get_end_edge_idx(vertex); edgeIdx++) {
+        
+        CSR::Edge edge = origGraph->get_edges()[edgeIdx];
+
+        edges->push_back(edge);        
+        numEdgesInPartition++;
+
+        const float* weight = origGraph->get_weights();
+        weights->push_back(*weight);
+      }
+    }
+
+    // This partition is filled with N vertices or we have reached the end
+    if (numVertices % N == 0 or numVertices == origGraph->get_n_vertices()) {
+      lastEdgeIdx += numEdgesInPartition;
+      numEdgesInPartition = 0;
+
+      // Instantiate partition and add to partitions array
+      CSRPartition partition(numVertices-N, numVertices, lastEdgeIdx-numEdgesInPartition, lastEdgeIdx, vertices->data(), edges->data(), weights->data());
+      partitions.push_back(partition);
+
+    }
+  }
+  
+  return partitions;
+}
+
 template<class SampleType, typename App>
 bool nextdoor(const char* graph_file, const char* graph_type, const char* graph_format, 
              const int nruns, const bool chk_results, const bool print_samples,
@@ -3366,6 +3468,12 @@ bool nextdoor(const char* graph_file, const char* graph_type, const char* graph_
   NextDoorData<SampleType, App> nextDoorData;
 
   nextDoorData.csr = csr;
+
+  // Call new function
+  //partitionForTransitVertices(csr, {0,1,2,3,4,5,6,7,8,9,10});
+  //exit(EXIT_SUCCESS);
+  
+  
   allocNextDoorDataOnGPU<SampleType, App>(csr, nextDoorData);
   std::vector<GPUCSRPartition> gpuCSRPartitions = transferCSRToGPUs(nextDoorData, csr);
   nextDoorData.gpuCSRPartitions = gpuCSRPartitions;
