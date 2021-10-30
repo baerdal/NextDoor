@@ -250,15 +250,25 @@ __global__ void samplingKernel(const int step, GPUCSRPartition graph, const size
   if (transit != invalidVertex) {
     // if (graph.device_csr->has_vertex(transit) == false)
     //   printf("transit %d\n", transit);
-    assert(graph.device_csr->has_vertex(transit));
+    // assert(graph.device_csr->has_vertex(transit));
+    bool has_vertex = false;
+    int transitPosInPartition = 0;
+    for (transitPosInPartition = 0; transitPosInPartition < graph.device_csr->get_n_vertices(); transitPosInPartition++) {
+      if (graph.device_csr->get_vertices()[transitPosInPartition].id == transit) {
+        has_vertex = true;
+        break;
+      }
+    }
 
-    EdgePos_t numTransitEdges = graph.device_csr->get_n_edges_for_vertex(transit);
+    assert(has_vertex);
+
+    EdgePos_t numTransitEdges = graph.device_csr->get_n_edges_for_vertex(transitPosInPartition);
     
     if (numTransitEdges != 0 && (tpMode == NextFuncExecution || tpMode == CollectiveNeighborhoodComputation)) {
       //Execute next in this mode only
-      const CSR::Edge* transitEdges = graph.device_csr->get_edges(transit);
-      const float* transitEdgeWeights = graph.device_csr->get_weights(transit);
-      const float maxWeight = graph.device_csr->get_max_weight(transit);
+      const CSR::Edge* transitEdges = graph.device_csr->get_edges(transitPosInPartition); //TODO: Berk
+      const float* transitEdgeWeights = graph.device_csr->get_weights(transitPosInPartition);
+      const float maxWeight = graph.device_csr->get_max_weight(transitPosInPartition);
       if (tpMode == NextFuncExecution) {
         neighbor = App().next(step, graph.device_csr, &transit, sampleIdx, &samples[(sampleIdx - deviceFirstSample)], maxWeight, transitEdges, transitEdgeWeights, 
                               numTransitEdges, transitNeighborIdx, randState);
@@ -2562,27 +2572,41 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
           auto device = nextDoorData.devices[deviceIdx];
           CHK_CU(cudaSetDevice(device));
           const VertexID_t deviceSampleStartPtr = PartStartPointer(nextDoorData.samples.size(), deviceIdx, numDevices);
-          
+          GPUCSRPartition gpuTransitPartition;
+
           //nextDoorData.dTransitToSampleMapKeys[deviceIdx] contains the transit vertices
+          if (step > 0) {
+            printf("totalThreads %d\n", totalThreads[deviceIdx]);
+            VertexID_t* vertices = new VertexID_t[totalThreads[deviceIdx]];
+            //dest, src
+            CHK_CU(cudaMemcpy(vertices, nextDoorData.dTransitToSampleMapKeys[deviceIdx], sizeof(VertexID_t)*totalThreads[deviceIdx], cudaMemcpyDeviceToHost));        
 
-          VertexID_t* vertices = new VertexID_t[totalThreads[deviceIdx]];
-          //dest, src
-          CHK_CU(cudaMemcpy(vertices, nextDoorData.dTransitToSampleMapKeys[deviceIdx], sizeof(VertexID_t*), cudaMemcpyDeviceToHost));        
-
-          //Convert vertices array to vector
-          std::vector<VertexID_t> vertices_vector;
-          int len = sizeof(vertices)/sizeof(vertices[0]);
-          
-          for (auto id = 0; id < len; id++) {
-            vertices_vector.push_back(vertices[id]);
+            //Convert vertices array to vector
+            std::vector<VertexID_t> vertices_vector;
+            int len = totalThreads[deviceIdx];
+            
+            for (auto id = 0; id < len; id++) {
+              vertices_vector.push_back(vertices[id]);
+            }
+            
+            //Call partitionForTransitVertices() function
+            if (step == 1) {
+              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_vertex_array));
+              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_edge_array));
+              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_weights_array));
+            }
+            CSRPartition transitPartition = partitionForTransitVertices(nextDoorData.csr, vertices_vector);
+            CSRPartition deviceCSRPartition = copyPartitionToGPU(transitPartition, gpuTransitPartition);
+            gpuTransitPartition.device_csr = (CSRPartition*)csrPartitionBuff;
+            CHK_CU(cudaMemcpyToSymbol(csrPartitionBuff, &deviceCSRPartition, sizeof(CSRPartition)));
+          } 
+          else {
+            gpuTransitPartition = gpuCSRPartitions[deviceIdx];
           }
-
-          //Call partitionForTransitVertices() function
-          partitionForTransitVertices(nextDoorData.csr, vertices_vector);
 
           for (int threadsExecuted = 0; threadsExecuted < totalThreads[deviceIdx]; threadsExecuted += nextDoorData.maxThreadsPerKernel[deviceIdx]) {
             size_t currExecutionThreads = min((size_t)nextDoorData.maxThreadsPerKernel[deviceIdx], totalThreads[deviceIdx] - threadsExecuted);
-            samplingKernel<SampleType, App, TransitParallelMode::NextFuncExecution, 0><<<thread_block_size(currExecutionThreads, N_THREADS), N_THREADS>>>(step, gpuCSRPartitions[deviceIdx], 
+            samplingKernel<SampleType, App, TransitParallelMode::NextFuncExecution, 0><<<thread_block_size(currExecutionThreads, N_THREADS), N_THREADS>>>(step, gpuTransitPartition, 
                             threadsExecuted, currExecutionThreads, deviceSampleStartPtr, nextDoorData.INVALID_VERTEX,
                             (const VertexID_t*)nextDoorData.dTransitToSampleMapKeys[deviceIdx], (const VertexID_t*)nextDoorData.dTransitToSampleMapValues[deviceIdx],
                             totalThreads[deviceIdx], nextDoorData.dOutputSamples[deviceIdx], nextDoorData.samples.size(),
@@ -3065,7 +3089,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
       double inversionT2 = convertTimeValToDouble(getTimeOfDay ());
       //std::cout << "inversionTime at step " << step << " : " << (inversionT2 - inversionT1) << std::endl; 
       inversionTime += (inversionT2 - inversionT1);
-      #if 0
+      #if 1
       VertexID_t* hTransitToSampleMapKeys = new VertexID_t[totalThreads[0]];
       VertexID_t* hTransitToSampleMapValues = new VertexID_t[totalThreads[0]];
       VertexID_t* hSampleToTransitMapKeys = new VertexID_t[totalThreads[0]];
@@ -3083,7 +3107,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
       hAllTransitToSampleMapValues.push_back(hTransitToSampleMapValues);
       hAllSamplesToTransitMapKeys.push_back(hSampleToTransitMapKeys);
 
-      printKeyValuePairs(hTransitToSampleMapKeys, hTransitToSampleMapValues, totalThreads[0], ',');
+      printKeyValuePairs(hTransitToSampleMapKeys, hTransitToSampleMapValues, min(totalThreads[0], 100L), ',');
       #endif
     }
   }
@@ -3365,26 +3389,27 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
 }
 
 
-void partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
+CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
 {
   size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
+  std::set<int> vector_set(vertexIndices.begin(), vertexIndices.end());
 
   // Each partition has three arrays: vertices, edges, weights
   std::vector<CSR::Vertex>* vertices = new std::vector<CSR::Vertex>();
   std::vector<CSR::Edge>* edges = new std::vector<CSR::Edge>();
   std::vector<float>* weights = new std::vector<float>();
 
-  for (VertexID_t vertex : vertexIndices) {
-    printf("Vertex %d\n", vertex);
+  for (VertexID_t vertex : vector_set) {
     vertices->push_back(origGraph->get_vertices()[vertex]);
     numVertices++;
+    
+    vertices[0].set_start_edge_id(numEdgesInPartition - 1);
 
     if (origGraph->n_edges_for_vertex(vertex) > 0) {
       // Iterate through all edges leaving given vertex and add to edge array
       for (auto edgeIdx = origGraph->get_start_edge_idx(vertex); edgeIdx <= origGraph->get_end_edge_idx(vertex); edgeIdx++) {
-        printf("Edge %d\n", edgeIdx);
         CSR::Edge edge = origGraph->get_edges()[edgeIdx];
         edges->push_back(edge);        
         numEdgesInPartition++;
@@ -3392,8 +3417,15 @@ void partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
         const float* weight = origGraph->get_weights();
         weights->push_back(*weight);
       }
+      //vertices[vertices->size()-1].set_end_edge_id(numEdgesInPartition - 1);
+    } else {
+      //vertices[vertices->size()-1].set_end_edge_id(-1);
     }
-  }
+  } 
+
+  printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
+
+  return CSRPartition (0, vertices->size(), 0, edges->size() - 1, vertices->data(), edges->data(), weights->data());
 }
 
 ///Write a function to partition CSR graph such that number of vertices in each partition are less than N 
