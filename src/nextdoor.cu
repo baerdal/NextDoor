@@ -3405,7 +3405,7 @@ CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertex
     vertices->push_back(origGraph->get_vertices()[vertex]);
     numVertices++;
     
-    vertices[0].set_start_edge_id(numEdgesInPartition - 1);
+    vertices->at(0).set_start_edge_id(numEdgesInPartition);
 
     if (origGraph->n_edges_for_vertex(vertex) > 0) {
       // Iterate through all edges leaving given vertex and add to edge array
