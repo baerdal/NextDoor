@@ -251,17 +251,26 @@ __global__ void samplingKernel(const int step, GPUCSRPartition graph, const size
     // if (graph.device_csr->has_vertex(transit) == false)
     //   printf("transit %d\n", transit);
     // assert(graph.device_csr->has_vertex(transit));
-    bool has_vertex = false;
     int transitPosInPartition = 0;
-    for (transitPosInPartition = 0; transitPosInPartition < graph.device_csr->get_n_vertices(); transitPosInPartition++) {
-      if (graph.device_csr->get_vertices()[transitPosInPartition].id == transit) {
-        has_vertex = true;
-        break;
+
+    if (step == 0) {
+      transitPosInPartition = transit;
+    }
+    else {
+      bool has_vertex = false;
+      for (transitPosInPartition = 0; transitPosInPartition < graph.device_csr->get_n_vertices(); transitPosInPartition++) {
+        int transitID = graph.device_csr->get_vertices()[transitPosInPartition].id;
+        // if (threadIdx.x == 0) {printf("transitID %d\n", transitID);}
+        if (transitID == transit) {
+          has_vertex = true;
+          break;
+        }
       }
+        if (!has_vertex) return;
     }
 
-    assert(has_vertex);
-
+   // return;
+    //assert(has_vertex);
     EdgePos_t numTransitEdges = graph.device_csr->get_n_edges_for_vertex(transitPosInPartition);
     
     if (numTransitEdges != 0 && (tpMode == NextFuncExecution || tpMode == CollectiveNeighborhoodComputation)) {
@@ -2576,7 +2585,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
 
           //nextDoorData.dTransitToSampleMapKeys[deviceIdx] contains the transit vertices
           if (step > 0) {
-            printf("totalThreads %d\n", totalThreads[deviceIdx]);
+            //printf("totalThreads %d\n", totalThreads[deviceIdx]);
             VertexID_t* vertices = new VertexID_t[totalThreads[deviceIdx]];
             //dest, src
             CHK_CU(cudaMemcpy(vertices, nextDoorData.dTransitToSampleMapKeys[deviceIdx], sizeof(VertexID_t)*totalThreads[deviceIdx], cudaMemcpyDeviceToHost));        
@@ -2590,11 +2599,11 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
             }
             
             //Call partitionForTransitVertices() function
-            if (step == 1) {
-              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_vertex_array));
-              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_edge_array));
-              CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_weights_array));
-            }
+            // if (step == 1) {
+            //   CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_vertex_array));
+            //   CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_edge_array));
+            //   CHK_CU(cudaFree(gpuCSRPartitions[deviceIdx].device_weights_array));
+            // }
             CSRPartition transitPartition = partitionForTransitVertices(nextDoorData.csr, vertices_vector);
             CSRPartition deviceCSRPartition = copyPartitionToGPU(transitPartition, gpuTransitPartition);
             gpuTransitPartition.device_csr = (CSRPartition*)csrPartitionBuff;
@@ -3391,7 +3400,7 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
 
 CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
 {
-  size_t lastEdgeIdx = 0;
+  //size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
   std::set<int> vector_set(vertexIndices.begin(), vertexIndices.end());
@@ -3404,8 +3413,7 @@ CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertex
   for (VertexID_t vertex : vector_set) {
     vertices->push_back(origGraph->get_vertices()[vertex]);
     numVertices++;
-    
-    vertices[0].set_start_edge_id(numEdgesInPartition - 1);
+    vertices->at(vertices->size()-1).set_start_edge_id(numEdgesInPartition);
 
     if (origGraph->n_edges_for_vertex(vertex) > 0) {
       // Iterate through all edges leaving given vertex and add to edge array
@@ -3417,13 +3425,13 @@ CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertex
         const float* weight = origGraph->get_weights();
         weights->push_back(*weight);
       }
-      //vertices[vertices->size()-1].set_end_edge_id(numEdgesInPartition - 1);
+      vertices->at(vertices->size()-1).set_end_edge_id(numEdgesInPartition - 1);
     } else {
-      //vertices[vertices->size()-1].set_end_edge_id(-1);
+      vertices->at(vertices->size()-1).set_end_edge_id(-1);
     }
   } 
 
-  printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
+  //printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
 
   return CSRPartition (0, vertices->size(), 0, edges->size() - 1, vertices->data(), edges->data(), weights->data());
 }

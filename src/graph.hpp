@@ -141,7 +141,7 @@ public:
         //   vertices.push_back(Vertex(i, i));
         // }
       }
-
+      vertices[src].set_id(src);
       vertices[src].add_edge(dst, weight);
 
       n_edges++;
@@ -210,6 +210,7 @@ public:
           //   vertices.push_back(Vertex(i, i));
           // }
         }
+        vertices[src].set_id(src);
         vertices[src].add_edge(dst, 0.0f);
         max_vertex = max(src, max_vertex);
         max_vertex = max(dst, max_vertex);
