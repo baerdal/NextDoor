@@ -2608,6 +2608,10 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
             CSRPartition deviceCSRPartition = copyPartitionToGPU(transitPartition, gpuTransitPartition);
             gpuTransitPartition.device_csr = (CSRPartition*)csrPartitionBuff;
             CHK_CU(cudaMemcpyToSymbol(csrPartitionBuff, &deviceCSRPartition, sizeof(CSRPartition)));
+            
+            delete transitPartition.vertices;
+            delete transitPartition.edges;
+            delete transitPartition.weights;
           } 
           else {
             gpuTransitPartition = gpuCSRPartitions[deviceIdx];
