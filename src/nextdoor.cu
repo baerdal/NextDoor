@@ -3404,7 +3404,7 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
 
 CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertexIndices)
 {
-  //double t1 = convertTimeValToDouble(getTimeOfDay());
+  double t1 = convertTimeValToDouble(getTimeOfDay());
   //size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
@@ -3437,8 +3437,8 @@ CSRPartition partitionForTransitVertices(CSR* origGraph, std::vector<int> vertex
   } 
 
   //printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
-  //double t2 = convertTimeValToDouble(getTimeOfDay());
-  //printf("%f", t1-t2);
+  double t2 = convertTimeValToDouble(getTimeOfDay());
+  printf("%f", t2-t1);
   return CSRPartition (0, vertices->size(), 0, edges->size() - 1, vertices->data(), edges->data(), weights->data());
 }
 
