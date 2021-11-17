@@ -34,6 +34,10 @@ struct NextDoorData {
   int INVALID_VERTEX;
   int maxBits;
   std::vector<GPUCSRPartition> gpuCSRPartitions;
+
+  std::vector<CSR::Vertex> vertices;
+  std::vector<CSR::Edge> edges;
+  std::vector<float> weights;
 };
 
 CSR* loadGraph(Graph& graph, char* graph_file, char* graph_type, char* graph_format);
