@@ -3445,7 +3445,7 @@ CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, Ve
   data.edges.clear();
   data.weights.clear();
 
-  for (VertexID_t vertex : vector_set) {
+  for (VertexID_t vertex : vertexIndices) {
     data.vertices.push_back(data.csr->get_vertices()[vertex]);
     numVertices++;
     data.vertices.at(data.vertices.size()-1).set_start_edge_id(numEdgesInPartition);
@@ -3544,10 +3544,6 @@ bool nextdoor(const char* graph_file, const char* graph_type, const char* graph_
   NextDoorData<SampleType, App> nextDoorData;
 
   nextDoorData.csr = csr;
-
-  // Call new function
-  //partitionForTransitVertices(csr, {0,1,2,3,4,5,6,7,8,9,10});
-  //exit(EXIT_SUCCESS);
   
   
   allocNextDoorDataOnGPU<SampleType, App>(csr, nextDoorData);
