@@ -3438,21 +3438,20 @@ CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, Ve
   //size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
-  //std::set<int> vector_set(vertexIndices.begin(), vertexIndices.end());
 
   //Clear vertices, edges, weights
   data.vertices.clear();
   data.edges.clear();
   data.weights.clear();
 
-  for (VertexID_t vertex : vertexIndices) {
-    data.vertices.push_back(data.csr->get_vertices()[vertex]);
+  for (VertexID_t tr = 0; tr < *vertexIndices; tr++) {
+    data.vertices.push_back(data.csr->get_vertices()[vertexIndices[tr]]);
     numVertices++;
     data.vertices.at(data.vertices.size()-1).set_start_edge_id(numEdgesInPartition);
 
-    if (data.csr->n_edges_for_vertex(vertex) > 0) {
+    if (data.csr->n_edges_for_vertex(vertexIndices[tr]) > 0) {
       // Iterate through all edges leaving given vertex and add to edge array
-      for (auto edgeIdx = data.csr->get_start_edge_idx(vertex); edgeIdx <= data.csr->get_end_edge_idx(vertex); edgeIdx++) {
+      for (auto edgeIdx = data.csr->get_start_edge_idx(vertexIndices[tr]); edgeIdx <= data.csr->get_end_edge_idx(vertexIndices[tr]); edgeIdx++) {
         CSR::Edge edge = data.csr->get_edges()[edgeIdx];
         data.edges.push_back(edge);        
         numEdgesInPartition++;
