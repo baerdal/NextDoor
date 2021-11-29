@@ -452,8 +452,7 @@ namespace GPUUtils {
   void printKeyValuePairs(T1* keys, T2* values, int nelems, char sep)
   {
     for (int i = 0; i < nelems; i++) {
-      if (values[i] == 4439958 || keys[i] == 4549983)
-        std::cout << i << ": [" << keys[i] << ", " << values[i] << "]" << sep;
+      std::cout << i << ": [" << keys[i] << ", " << values[i] << "]" << sep;
     }
 
     std::cout << std::endl;

@@ -2601,18 +2601,6 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
           //nextDoorData.dTransitToSampleMapKeys[deviceIdx] contains the transit vertices
           if (step > 0) {
             //printf("totalThreads %d\n", totalThreads[deviceIdx]);
-            VertexID_t* vertices = new VertexID_t[totalThreads[deviceIdx]];
-            //dest, src
-            CHK_CU(cudaMemcpy(vertices, nextDoorData.dTransitToSampleMapKeys[deviceIdx], sizeof(VertexID_t)*totalThreads[deviceIdx], cudaMemcpyDeviceToHost));        
-
-            //Convert vertices array to vector
-            std::vector<VertexID_t> indices;
-            int len = totalThreads[deviceIdx];
-            
-            for (auto id = 0; id < len; id++) {
-              indices.push_back(vertices[id]);
-            }
-            delete vertices;
 
             // Determine temp device storage requirements
             void* dRunLengthEncodeTmpStorage = nullptr;
@@ -2633,8 +2621,16 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
                                               nextDoorData.dTransitToSampleMapKeys[deviceIdx],
                                               dUniqueIndices[deviceIdx], dUniqueIndicesCounts[deviceIdx], 
                                               dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]);
+            
+            int hUniqueIndicesNumRuns;
+            CHK_CU(cudaMemcpy(&hUniqueIndicesNumRuns, dUniqueIndicesNumRuns[deviceIdx], sizeof(int), cudaMemcpyDeviceToHost));
 
-            CSRPartition transitPartition = partitionForTransitVertices(nextDoorData, dUniqueIndices[deviceIdx]);
+            if (nextDoorData.hUniqueIndices.size() < hUniqueIndicesNumRuns) {
+              nextDoorData.hUniqueIndices.resize(hUniqueIndicesNumRuns);
+            }
+            CHK_CU(cudaMemcpy(nextDoorData.hUniqueIndices.data(), dUniqueIndices[deviceIdx], hUniqueIndicesNumRuns * sizeof(VertexID_t), cudaMemcpyDeviceToHost));
+            
+            CSRPartition transitPartition = partitionForTransitVertices(nextDoorData, nextDoorData.hUniqueIndices);
             CSRPartition deviceCSRPartition = copyPartitionToGPU(transitPartition, gpuTransitPartition);
             gpuTransitPartition.device_csr = (CSRPartition*)csrPartitionBuff;
             CHK_CU(cudaMemcpyToSymbol(csrPartitionBuff, &deviceCSRPartition, sizeof(CSRPartition)));
@@ -3128,7 +3124,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
       double inversionT2 = convertTimeValToDouble(getTimeOfDay ());
       //std::cout << "inversionTime at step " << step << " : " << (inversionT2 - inversionT1) << std::endl; 
       inversionTime += (inversionT2 - inversionT1);
-      #if 1
+      #if 0
       VertexID_t* hTransitToSampleMapKeys = new VertexID_t[totalThreads[0]];
       VertexID_t* hTransitToSampleMapValues = new VertexID_t[totalThreads[0]];
       VertexID_t* hSampleToTransitMapKeys = new VertexID_t[totalThreads[0]];
@@ -3432,7 +3428,7 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
 }
 
 template<class SampleType, typename App>
-CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, VertexID_t* vertexIndices)
+CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, std::vector<VertexID_t> vertexIndices)
 {
   double t1 = convertTimeValToDouble(getTimeOfDay());
   //size_t lastEdgeIdx = 0;
@@ -3444,7 +3440,7 @@ CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, Ve
   data.edges.clear();
   data.weights.clear();
 
-  for (VertexID_t tr = 0; tr < *vertexIndices; tr++) {
+  for (auto tr = 0; tr < vertexIndices.size(); tr++) {
     data.vertices.push_back(data.csr->get_vertices()[vertexIndices[tr]]);
     numVertices++;
     data.vertices.at(data.vertices.size()-1).set_start_edge_id(numEdgesInPartition);

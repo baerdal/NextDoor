@@ -35,6 +35,8 @@ struct NextDoorData {
   int maxBits;
   std::vector<GPUCSRPartition> gpuCSRPartitions;
 
+  std::vector<VertexID_t> hUniqueIndices;
+  
   std::vector<CSR::Vertex> vertices;
   std::vector<CSR::Edge> edges;
   std::vector<float> weights;
