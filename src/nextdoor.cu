@@ -2630,7 +2630,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
             }
             CHK_CU(cudaMemcpy(nextDoorData.hUniqueIndices.data(), dUniqueIndices[deviceIdx], hUniqueIndicesNumRuns * sizeof(VertexID_t), cudaMemcpyDeviceToHost));
             
-            CSRPartition transitPartition = partitionForTransitVertices(nextDoorData, nextDoorData.hUniqueIndices);
+            CSRPartition transitPartition = partitionTransitVertices(nextDoorData);
             CSRPartition deviceCSRPartition = copyPartitionToGPU(transitPartition, gpuTransitPartition);
             gpuTransitPartition.device_csr = (CSRPartition*)csrPartitionBuff;
             CHK_CU(cudaMemcpyToSymbol(csrPartitionBuff, &deviceCSRPartition, sizeof(CSRPartition)));
@@ -3428,43 +3428,44 @@ std::vector<VertexID_t>& getFinalSamples(NextDoorData<SampleType, App>& nextDoor
 }
 
 template<class SampleType, typename App>
-CSRPartition partitionForTransitVertices(NextDoorData<SampleType, App>& data, std::vector<VertexID_t> vertexIndices)
+CSRPartition partitionTransitVertices(NextDoorData<SampleType, App>& nextDoorData)
 {
-  double t1 = convertTimeValToDouble(getTimeOfDay());
+  //double t1 = convertTimeValToDouble(getTimeOfDay());
   //size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
 
   //Clear vertices, edges, weights
-  data.vertices.clear();
-  data.edges.clear();
-  data.weights.clear();
+  nextDoorData.vertices.clear();
+  nextDoorData.edges.clear();
+  nextDoorData.weights.clear();
 
-  for (auto tr = 0; tr < vertexIndices.size(); tr++) {
-    data.vertices.push_back(data.csr->get_vertices()[vertexIndices[tr]]);
+  for (auto tr = 0; tr < nextDoorData.hUniqueIndices.size(); tr++) {
+    nextDoorData.vertices.push_back(nextDoorData.csr->get_vertices()[nextDoorData.hUniqueIndices[tr]]);
     numVertices++;
-    data.vertices.at(data.vertices.size()-1).set_start_edge_id(numEdgesInPartition);
+    nextDoorData.vertices.at(nextDoorData.vertices.size()-1).set_start_edge_id(numEdgesInPartition);
 
-    if (data.csr->n_edges_for_vertex(vertexIndices[tr]) > 0) {
+    if (nextDoorData.csr->n_edges_for_vertex(nextDoorData.hUniqueIndices[tr]) > 0) {
       // Iterate through all edges leaving given vertex and add to edge array
-      for (auto edgeIdx = data.csr->get_start_edge_idx(vertexIndices[tr]); edgeIdx <= data.csr->get_end_edge_idx(vertexIndices[tr]); edgeIdx++) {
-        CSR::Edge edge = data.csr->get_edges()[edgeIdx];
-        data.edges.push_back(edge);        
+      for (auto edgeIdx = nextDoorData.csr->get_start_edge_idx(nextDoorData.hUniqueIndices[tr]); edgeIdx <= nextDoorData.csr->get_end_edge_idx(nextDoorData.hUniqueIndices[tr]); edgeIdx++) {
+        CSR::Edge edge = nextDoorData.csr->get_edges()[edgeIdx];
+        nextDoorData.edges.push_back(edge);        
         numEdgesInPartition++;
 
-        const float weight = data.csr->get_weights()[edgeIdx];
-        data.weights.push_back(weight);
+        const float weight = nextDoorData.csr->get_weights()[edgeIdx];
+        nextDoorData.weights.push_back(weight);
       }
-      data.vertices.at(data.vertices.size()-1).set_end_edge_id(numEdgesInPartition - 1);
-    } else {
-      data.vertices.at(data.vertices.size()-1).set_end_edge_id(-1);
+      nextDoorData.vertices.at(nextDoorData.vertices.size()-1).set_end_edge_id(numEdgesInPartition - 1);
+    } 
+    else {
+      nextDoorData.vertices.at(nextDoorData.vertices.size()-1).set_end_edge_id(-1);
     }
   } 
 
   //printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
-  double t2 = convertTimeValToDouble(getTimeOfDay());
+  //double t2 = convertTimeValToDouble(getTimeOfDay());
   //printf("%f", t2-t1);
-  return CSRPartition (0, data.vertices.size(), 0, data.edges.size() - 1, data.vertices.data(), data.edges.data(), data.weights.data());
+  return CSRPartition (0, nextDoorData.vertices.size(), 0, nextDoorData.edges.size() - 1, nextDoorData.vertices.data(), nextDoorData.edges.data(), nextDoorData.weights.data());
 }
 
 ///Write a function to partition CSR graph such that number of vertices in each partition are less than N 
