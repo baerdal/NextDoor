@@ -2622,7 +2622,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
                                               dUniqueIndices[deviceIdx], dUniqueIndicesCounts[deviceIdx], 
                                               dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]);
             
-            int hUniqueIndicesNumRuns;
+            int hUniqueIndicesNumRuns = 0;
             CHK_CU(cudaMemcpy(&hUniqueIndicesNumRuns, dUniqueIndicesNumRuns[deviceIdx], sizeof(int), cudaMemcpyDeviceToHost));
 
             if (nextDoorData.hUniqueIndices.size() < hUniqueIndicesNumRuns) {
@@ -3431,7 +3431,6 @@ template<class SampleType, typename App>
 CSRPartition partitionTransitVertices(NextDoorData<SampleType, App>& nextDoorData)
 {
   //double t1 = convertTimeValToDouble(getTimeOfDay());
-  //size_t lastEdgeIdx = 0;
   size_t numVertices = 0;
   size_t numEdgesInPartition = 0;
 
@@ -3441,6 +3440,10 @@ CSRPartition partitionTransitVertices(NextDoorData<SampleType, App>& nextDoorDat
   nextDoorData.weights.clear();
 
   for (auto tr = 0; tr < nextDoorData.hUniqueIndices.size(); tr++) {
+    // Invalid vertex check
+    if (nextDoorData.hUniqueIndices[tr] == nextDoorData.INVALID_VERTEX)
+      continue;
+    
     nextDoorData.vertices.push_back(nextDoorData.csr->get_vertices()[nextDoorData.hUniqueIndices[tr]]);
     numVertices++;
     nextDoorData.vertices.at(nextDoorData.vertices.size()-1).set_start_edge_id(numEdgesInPartition);
@@ -3462,7 +3465,6 @@ CSRPartition partitionTransitVertices(NextDoorData<SampleType, App>& nextDoorDat
     }
   } 
 
-  //printf("n vertices %d n edges %d\n", vertices->size(), edges->size());
   //double t2 = convertTimeValToDouble(getTimeOfDay());
   //printf("%f", t2-t1);
   return CSRPartition (0, nextDoorData.vertices.size(), 0, nextDoorData.edges.size() - 1, nextDoorData.vertices.data(), nextDoorData.edges.data(), nextDoorData.weights.data());
