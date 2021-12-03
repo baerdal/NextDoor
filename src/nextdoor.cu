@@ -2370,7 +2370,7 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
 
   std::vector<VertexID_t*> dUniqueIndices = std::vector<VertexID_t*>(nextDoorData.devices.size());
   std::vector<VertexID_t*> dUniqueIndicesCounts = std::vector<VertexID_t*>(nextDoorData.devices.size());
-  std::vector<EdgePos_t*> dUniqueIndicesNumRuns = std::vector<VertexID_t*>(nextDoorData.devices.size());
+  std::vector<EdgePos_t*> dUniqueIndicesNumRuns = std::vector<EdgePos_t*>(nextDoorData.devices.size());
    
   /**Pointers for each kernel type**/
   std::vector<EdgePos_t*> gridKernelTransitsNum = std::vector<EdgePos_t*>(nextDoorData.devices.size());
@@ -2613,16 +2613,15 @@ bool doTransitParallelSampling(CSR* csr, NextDoorData<SampleType, App>& nextDoor
             cub::DeviceRunLengthEncode::Encode(dRunLengthEncodeTmpStorage, dRunLengthEncodeTmpStorageSize, 
                                               nextDoorData.dTransitToSampleMapKeys[deviceIdx],
                                               dUniqueIndices[deviceIdx], dUniqueIndicesCounts[deviceIdx], 
-                                              dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]);
+                                              dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]/neighborsToSampleAtStep);
 
             assert(dRunLengthEncodeTmpStorageSize < temp_storage_bytes[deviceIdx]);
             dRunLengthEncodeTmpStorage = d_temp_storage[deviceIdx];
             cub::DeviceRunLengthEncode::Encode(dRunLengthEncodeTmpStorage, dRunLengthEncodeTmpStorageSize, 
                                               nextDoorData.dTransitToSampleMapKeys[deviceIdx],
                                               dUniqueIndices[deviceIdx], dUniqueIndicesCounts[deviceIdx], 
-                                              dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]);
-            
-            int hUniqueIndicesNumRuns = 0;
+                                              dUniqueIndicesNumRuns[deviceIdx], totalThreads[deviceIdx]/neighborsToSampleAtStep);
+            int hUniqueIndicesNumRuns;
             CHK_CU(cudaMemcpy(&hUniqueIndicesNumRuns, dUniqueIndicesNumRuns[deviceIdx], sizeof(int), cudaMemcpyDeviceToHost));
 
             if (nextDoorData.hUniqueIndices.size() < hUniqueIndicesNumRuns) {
