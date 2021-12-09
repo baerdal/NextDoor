@@ -36,7 +36,7 @@ struct KHopApp {
 
   __host__ __device__ EdgePos_t numSamples(CSR* graph)
   {
-    return graph->get_n_vertices() / VERTICES_PER_SAMPLE;
+    return 25000; //graph->get_n_vertices() / VERTICES_PER_SAMPLE;
   }
 
   template<class SampleType>

@@ -52,7 +52,7 @@ struct UniformRandomWalkApp {
   //Here, we have as many random walks as the number of vertices.
   __host__ __device__ EdgePos_t numSamples(CSR* graph)
   {
-    return 10000; //graph->get_n_vertices();
+    return 25000; //graph->get_n_vertices();
   }
 
   /**Next two functions are used to specify initialization of each sample (walk).
