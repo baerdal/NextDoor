@@ -1,7 +1,10 @@
 # NextDoor
 NextDoor accelerating graph sampling using GPUs.
 NextDoor uses <it>transit</it> parallelism that improves memory access locality and decreases control flow divergence.
-More details can be found in our upcoming EuroSys'21 paper. 
+
+### Documents
+[NextDoor Paper](https://marcoserafini.github.io/projects/nextdoor/nextdoor.pdf) \
+[My Initial Proposal](https://docs.google.com/document/d/14s6AZ9Ud-EPXw2mxDeszbHkCEUtRARCX5rldFIiSv7A/edit?usp=sharing) 
 
 
 # Code Structure
